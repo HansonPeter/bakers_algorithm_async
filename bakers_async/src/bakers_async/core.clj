@@ -11,11 +11,6 @@
 ; right now they are just the string "server", and we don't use them
 
 
-;;Make channels
-(def server-chan (chan))
-(def customer-chan (chan))
-(def to-calculate-chan (chan))
-
 ;;do the math, slowly.
 (defn fib [n]
   (case n
@@ -25,38 +20,51 @@
        (fib (- n 2)))))
 
 
-(defn do-the-math [chan]
-  ;; it should be calculating the fib values and printing them
-  (go
-   (while "Not the heat death of the universe"
-    (println "looped")
+(defn do-math [chan]
+
+
     (let
       [pair (<! chan)
        cust (first pair)
        server (second pair)]
-      (println "we're able to get inside the let")
-      ;;we would be using promises as a stand-in for n.
-      ;(deliver server (fib cust))
-      ;(println (str @server "Test"))
-      (println (fib cust))
-      (>! server-chan (promise))))))
+      (println "looped")
+      (deliver server (fib cust))
+      (println (str @server "Test"))
+      ))
+
+(defn do-all-things [cust-chan, serv-chan,]
+  (let [to-be-calculated (chan 5)]
+    (while "Not the heat death of the universe"
+      (go
+       (>! to-be-calculated [(<!! cust-chan) (<!! serv-chan)])
+       (let
+          [pair (<! to-be-calculated)
+           cust (first pair)
+           server (second pair)]
+         (println "looped")
+         (println cust)
+         (deliver server (fib cust))
+         (println (str @server "Test")))
+       (>! serv-chan (promise))
+       (print "do-all looped")))))
 
 
-(defn mixer [customer-chan server-chan]
-  ;; creates pairs of customers and servers and adds them to the to-be-calculated list.
-  (go
-   (while "Not the heat death of the universe"
-    (let [cust (<! customer-chan)
-        server (<! server-chan)]
-      (>! to-calculate-chan [cust server])
-    ))))
+
 
 ;;Setup fns
 (defn add-to-customers [n]
-  (go (repeatedly n #(>! customer-chan (+ (rand 5) 5)))))
+  (let [cust-chan (chan n)]
+    (go (doseq [_ (range n)]
+          (>! cust-chan (+ (rand-int 5) 10))))
+    cust-chan))
+
 
 (defn add-to-servers [n]
-  (go (repeatedly n #(>! server-chan (promise)))))
+  (let [serv-chan (chan n)]
+    (go (doseq [_ (range n)]
+      (>! serv-chan (promise))))
+    serv-chan))
+
 
 ;; The main fn.
 (defn -main
@@ -65,9 +73,6 @@
   (print (do
     (println "You have to manually kill this thing;")
     (println "We don't use a timeout due to randomness.")
-    (add-to-servers 5)
-    (add-to-customers 50)
-    (mixer customer-chan server-chan)
-    (do-the-math to-calculate-chan)
-    (fib 50) ;go returns immediately, so add some work to take time.
+    (do-all-things (add-to-customers 50) (add-to-servers 5))
+      ;go returns immediately, so add some work to take time.
            )))
